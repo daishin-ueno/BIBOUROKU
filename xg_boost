@@ -1,5 +1,3 @@
-#https://qiita.com/c60evaporator/items/a9a049c3469f6b4872c6
-
 import xgboost as xgb
 import pandas as pd
 from sklearn.datasets import load_iris
