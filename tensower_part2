@@ -1,0 +1,75 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from sklearn.preprocessing import StandardScaler
+
+
+def plot_loss(history):
+  plt.plot(history.history['loss'], label='loss')
+  plt.plot(history.history['val_loss'], label='val_loss')
+  plt.ylim([0, 10])
+  plt.xlabel('Epoch')
+  plt.ylabel('Error [MPG]')
+  plt.legend()
+  plt.grid(True)
+plot_loss(history)
+
+
+url = 'http://archive.ics.uci.edu/ml/machine-learning-databases/auto-mpg/auto-mpg.data'
+column_names = ['MPG', 'Cylinders', 'Displacement', 'Horsepower', 'Weight',
+                'Acceleration', 'Model Year', 'Origin']
+
+raw_dataset = pd.read_csv(url, names=column_names,
+                          na_values='?', comment='\t',
+                          sep=' ', skipinitialspace=True)
+dataset = raw_dataset.copy()
+dataset = dataset.dropna()
+dataset['Origin'] = dataset['Origin'].map({1: 'USA', 2: 'Europe', 3: 'Japan'})
+dataset = pd.get_dummies(dataset, columns=['Origin'], prefix='', prefix_sep='')
+#print(dataset)
+train_dataset = dataset.sample(frac=0.8, random_state=0)
+test_dataset = dataset.drop(train_dataset.index)
+
+train_x_arrays = train_dataset.copy()
+test_x_arrays = test_dataset.copy()
+
+train_y_arrays = train_x_arrays.pop('MPG')
+test_y_arrays = test_x_arrays.pop('MPG')
+#print(train_x_arrays)
+
+normalizer  = tf.keras.layers.Normalization(axis=-1)
+normalizer.adapt(np.array(train_x_arrays))
+
+ms = StandardScaler()
+train_x_arrays_std = ms.fit_transform(train_x_arrays)
+test_x_arrays_std = ms.fit_transform(test_x_arrays)
+
+#normalizerとx_arrayの名前を同じにしているとエラーが出る
+model = keras.Sequential()
+model.add(layers.Dense(64, activation="relu", input_dim=9))
+#model.add(layers.Dense(64, activation="relu"))
+model.add(layers.Dense(64, activation="relu"))
+model.add(layers.Dense(1))
+
+model.compile(loss='mean_absolute_error',
+                optimizer=tf.keras.optimizers.Adam(0.001))
+model.summary()
+
+
+history = model.fit(
+    train_x_arrays_std,
+    train_y_arrays,
+    validation_split=0.2,
+    verbose=0, epochs=100)
+
+plot_loss(history)
+
+train_predictions = model.predict(train_x_arrays_std).flatten()
+plt.scatter(train_y_arrays, train_predictions)
+
+test_predictions = model.predict(test_x_arrays_std).flatten()
+plt.scatter(test_y_arrays, test_predictions)
