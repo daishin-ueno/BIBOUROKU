@@ -1,0 +1,96 @@
+#https://qiita.com/c60evaporator/items/a9a049c3469f6b4872c6
+#!pip install bayesian-optimization
+
+import xgboost as xgb
+import pandas as pd
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+import matplotlib.pyplot as plt
+import sys
+from bayes_opt import BayesianOptimization
+import numpy as np
+from xgboost import XGBRegressor
+from sklearn.model_selection import cross_val_score
+
+bayes_params = {'learning_rate': (0.01, 0.3),
+                'min_child_weight': (2, 8),
+                'max_depth': (1, 4),
+                'colsample_bytree': (0.2, 1.0),
+                'subsample': (0.2, 1.0),
+                'reg_alpha': (0.001, 0.1),
+                'reg_lambda': (0.001, 0.1),
+                'gamma': (0.0001, 0.1)
+                }
+# 対数スケールパラメータを対数化
+param_scales = {'learning_rate': 'log',
+                'min_child_weight': 'linear',
+                'max_depth': 'linear',
+                'colsample_bytree': 'linear',
+                'subsample': 'linear',
+                'reg_alpha': 'log',
+                'reg_lambda': 'log',
+                'gamma': 'log'
+                }
+bayes_params_log = {k: (np.log10(v[0]), np.log10(v[1])) if param_scales[k] == 'log' else v for k, v in bayes_params.items()}
+# 整数型パラメータを指定
+int_params = ['min_child_weight', 'max_depth']
+print(bayes_params_log)
+
+def bayes_evaluate(**kwargs):
+    params = kwargs
+    # 対数スケールパラメータは10のべき乗をとる
+    params = {k: np.power(10, v) if param_scales[k] == 'log' else v for k, v in params.items()}
+    # 整数型パラメータを整数化
+    params = {k: round(v) if k in int_params else v for k, v in params.items()}
+    # モデルにパラメータ適用
+    model.set_params(**params)
+    # cross_val_scoreでクロスバリデーション
+    scores = cross_val_score(model, train_x, train_y, cv=5,
+                             scoring='neg_mean_squared_error', fit_params=fit_params, n_jobs=-1)
+    val = scores.mean()
+    return val
+    
+    
+    iris = load_iris()
+
+iris_data = pd.DataFrame(iris.data, columns=iris.feature_names)
+iris_target = pd.Series(iris.target)
+
+train_x, test_x, train_y, test_y = train_test_split(iris_data, iris_target, test_size=0.2, shuffle=True)
+
+fit_params = {'verbose': 0,  # 学習中のコマンドライン出力
+              'early_stopping_rounds': 10,  # 学習時、評価指標がこの回数連続で改善しなくなった時点でストップ
+              'eval_metric': 'rmse',  # early_stopping_roundsの評価指標
+              'eval_set': [(train_x, train_y)]  # early_stopping_roundsの評価指標算出用データ
+              }
+model = XGBRegressor(booster='gbtree', objective='reg:squarederror',
+                     random_state=0, n_estimators=10000)  # チューニング前のモデル
+                     
+# ベイズ最適化を実行
+bo = BayesianOptimization(bayes_evaluate, bayes_params_log, random_state=0)
+#bo.set_gp_params(optimizer='ei')
+bo.maximize(init_points=5, n_iter=5)
+
+# 最適パラメータとスコアを取得
+best_params = bo.max['params']
+best_score = bo.max['target']
+# 対数スケールパラメータは10のべき乗をとる
+best_params = {k: np.power(10, v) if param_scales[k] == 'log' else v for k, v in best_params.items()}
+# 整数型パラメータを整数化
+best_params = {k: round(v) if k in int_params else v for k, v in best_params.items()}
+# 最適パラメータを表示
+print(f'最適パラメータ {best_params}\nスコア {best_score}')
+
+
+model.set_params(**best_params)
+#dtrain = xgb.DMatrix(train_x, label=train_y)
+#dtest = xgb.DMatrix(test_x, label=test_y)
+model.fit(train_x, train_y)
+
+#pred_train = model.predict(train_x)
+
+pred_train = model.predict(train_x)
+pred_test = model.predict(test_x)
+plt.scatter(train_y, pred_train)
+plt.scatter(test_y, pred_test)
